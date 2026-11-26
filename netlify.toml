@@ -1,0 +1,17 @@
+# Netlify: serve the static game from public/ and fetch the HexGL assets at build time.
+[build]
+  command = "node scripts/vendor-hexgl.mjs"
+  publish = "public"
+
+# Chromium.iso boots through the Vercel Function (it drives the Vercel Sandbox VM),
+# so a Netlify copy of the game proxies /api to the Vercel deployment.
+[[redirects]]
+  from = "/api/*"
+  to = "https://space-of-the-tourism.vercel.app/api/:splat"
+  status = 200
+  force = true
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

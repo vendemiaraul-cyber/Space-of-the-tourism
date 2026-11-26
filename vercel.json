@@ -1,0 +1,12 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "node scripts/vendor-hexgl.mjs",
+  "outputDirectory": "public",
+  "regions": ["fra1"],
+  "functions": {
+    "api/vm.mjs": { "maxDuration": 120, "includeFiles": "iso/**" }
+  },
+  "headers": [
+    { "source": "/assets/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] }
+  ]
+}

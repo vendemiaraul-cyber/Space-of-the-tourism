@@ -1,0 +1,16 @@
+{
+  "name": "space-of-the-tourism",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A three.js space-tourism game: HexGL's Feisar launched from a space station, procedural planets, a cockpit with a YouTube screen and a live Chromium screen running in a Vercel Sandbox VM",
+  "engines": { "node": "24.x" },
+  "scripts": {
+    "build": "node scripts/vendor-hexgl.mjs",
+    "iso:local": "node iso/server.mjs"
+  },
+  "dependencies": {
+    "@vercel/sandbox": "4.0.0"
+  },
+  "license": "MIT"
+}

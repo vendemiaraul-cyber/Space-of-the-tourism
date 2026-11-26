@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#05070d">
+<title>Space of the Tourism</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=Righteous&display=swap" rel="stylesheet">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/"
+} }
+</script>
+<style>
+/* VOICE: a cheerful space-tourism trip: travel-poster warmth over a working cockpit HUD.
+   IDEA: the boarding pass and the passport. You board with a ticket, every planet stamps your passport.
+   PICTURE: the game itself, full screen; the pass and stamps are paper objects laid over it.
+   COLOUR and TYPE: deep space #05070d, HUD teal #57f2d6, tourism orange #ff9a3c, paper #f6ead2; Righteous + Chakra Petch.
+   LAYOUT: game fills the screen; HUD hugs the edges, thumbs get the bottom corners on phones. */
+:root{--bg:#05070d;--hud:#57f2d6;--hud2:#9fb8c9;--org:#ff9a3c;--red:#ff4d5a;--paper:#f6ead2;--ink:#1d2330;--glass:rgba(6,12,22,.62);--line:rgba(120,240,220,.28);
+  --sat:env(safe-area-inset-top,0px);--sab:env(safe-area-inset-bottom,0px);--sal:env(safe-area-inset-left,0px);--sar:env(safe-area-inset-right,0px);color-scheme:dark}
+*{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:#e8f4f2;font:15px/1.4 "Chakra Petch",system-ui,sans-serif;touch-action:none;user-select:none;-webkit-user-select:none}
+button{font:inherit;color:inherit;cursor:pointer}
+#gl,#css3d{position:fixed;inset:0}
+#gl canvas{display:block;width:100%;height:100%}
+#css3d{pointer-events:none;z-index:2}
+#css3d iframe{pointer-events:auto;border:0;background:#000}
+.hud{position:fixed;z-index:5;pointer-events:none}
+.hud *{pointer-events:auto}
+.panel{background:var(--glass);border:1px solid var(--line);border-radius:10px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+#top{top:calc(10px + var(--sat));left:calc(12px + var(--sal));right:calc(12px + var(--sar));display:flex;gap:8px;align-items:flex-start;justify-content:space-between}
+#brand{padding:6px 12px;display:flex;flex-direction:column;pointer-events:none}
+#brand b{font:20px Righteous,system-ui;color:var(--org);letter-spacing:.02em;line-height:1.05}
+#brand span{font-size:12px;color:var(--hud2)}
+#chips{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;max-width:70vw}
+.chip{min-height:40px;min-width:44px;padding:0 12px;border-radius:20px;border:1px solid var(--line);background:var(--glass);color:#dff;font-weight:600;font-size:13px;display:inline-flex;align-items:center;gap:6px}
+.chip.on{border-color:var(--org);color:var(--org)}
+.chip:focus-visible,.btn:focus-visible{outline:2px solid var(--org);outline-offset:2px}
+.chip svg{width:16px;height:16px}
+#stamps b{color:var(--org)}
+#reticle{left:50%;top:50%;width:44px;height:44px;margin:-22px 0 0 -22px;opacity:.75;pointer-events:none}
+#target{left:0;top:0;transform:translate(-50%,-50%);pointer-events:none;display:none;text-align:center;white-space:nowrap}
+#target .d{width:26px;height:26px;margin:0 auto;border:2px solid var(--org);transform:rotate(45deg);border-radius:3px;box-shadow:0 0 12px rgba(255,154,60,.5)}
+#target .n{margin-top:8px;font-weight:700;font-size:13px;color:var(--org);text-shadow:0 1px 3px #000}
+#target .k{font-size:12px;color:#cde}
+#target.edge .d{border-color:var(--hud)}
+#target.edge .n{color:var(--hud)}
+#dash{left:50%;bottom:calc(12px + var(--sab));transform:translateX(-50%);display:flex;gap:14px;align-items:flex-end;padding:8px 16px;pointer-events:none}
+#dash .v{font:700 30px "Chakra Petch";color:var(--hud);font-variant-numeric:tabular-nums;line-height:1}
+#dash .u{font-size:12px;color:var(--hud2)}
+.bar{width:110px;height:8px;border-radius:4px;background:rgba(255,255,255,.12);overflow:hidden;margin-top:4px}
+.bar i{display:block;height:100%;width:0;background:var(--hud);border-radius:4px}
+#boostBar i{background:var(--org)}
+#alt{font-size:12px;color:var(--hud2);white-space:pre-line}
+#toast{left:50%;top:calc(76px + var(--sat));transform:translateX(-50%) translateY(-8px);padding:10px 16px;max-width:min(560px,92vw);text-align:center;opacity:0;transition:opacity .3s,transform .3s;pointer-events:none;font-weight:600}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast small{display:block;font-weight:400;color:var(--hud2);margin-top:2px}
+#stamp{right:calc(16px + var(--sar));top:calc(70px + var(--sat));width:190px;padding:12px;background:var(--paper);color:var(--ink);border-radius:6px;box-shadow:0 10px 30px rgba(0,0,0,.5);transform:rotate(4deg) scale(.6);opacity:0;transition:transform .45s cubic-bezier(.2,1.6,.4,1),opacity .3s;pointer-events:none}
+#stamp.show{opacity:1;transform:rotate(-5deg) scale(1)}
+#stamp canvas{width:100%;height:auto;display:block}
+#stamp p{margin:6px 0 0;font-size:12px;line-height:1.3}
+/* touch controls */
+#stick{left:calc(18px + var(--sal));bottom:calc(22px + var(--sab));width:132px;height:132px;border-radius:50%;border:1px solid var(--line);background:rgba(6,12,22,.35);display:none;touch-action:none}
+#stick i{position:absolute;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;background:rgba(87,242,214,.25);border:2px solid var(--hud)}
+#right{right:calc(16px + var(--sar));bottom:calc(20px + var(--sab));display:none;gap:12px;align-items:flex-end}
+#thr{width:52px;height:150px;border-radius:26px;border:1px solid var(--line);background:rgba(6,12,22,.35);position:relative;touch-action:none}
+#thr i{position:absolute;left:5px;right:5px;bottom:5px;border-radius:21px;background:linear-gradient(0deg,rgba(87,242,214,.55),rgba(87,242,214,.15));height:30%}
+#thr span{position:absolute;left:0;right:0;top:6px;text-align:center;font-size:11px;color:var(--hud2)}
+#boost{width:86px;height:86px;border-radius:50%;border:2px solid var(--org);background:radial-gradient(circle at 40% 35%,#ffb469,#e0611d 70%);color:#2a1205;font-weight:700;font-size:15px;box-shadow:0 0 18px rgba(255,154,60,.45);touch-action:none}
+#boost.on{filter:brightness(1.3)}
+body.touch #stick,body.touch #right{display:flex}
+body.touch #stick{display:block}
+body.touch #dash{bottom:calc(168px + var(--sab))}
+body.touch #dash .v{font-size:24px}
+body:not(.flying) #dash,body:not(.flying) #reticle,body:not(.flying) #stick,body:not(.flying) #right,body:not(.flying) #chips .fly{display:none!important}
+/* boarding pass */
+#title{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:20px;background:radial-gradient(ellipse at 50% 120%,rgba(255,154,60,.18),transparent 60%)}
+#pass{width:min(720px,100%);display:grid;grid-template-columns:minmax(0,1fr) 170px;background:var(--paper);color:var(--ink);border-radius:14px;box-shadow:0 30px 80px rgba(0,0,0,.6);overflow:hidden;transition:transform .7s cubic-bezier(.5,-.3,.6,1),opacity .6s}
+#pass.gone{transform:translateY(-120vh) rotate(-8deg);opacity:0}
+#pass .main{padding:22px 24px 18px;position:relative;background:linear-gradient(120deg,var(--paper) 60%,#efe0c3)}
+#pass h1{font:40px/1.02 Righteous,system-ui;margin:0 0 4px;color:#e0611d;text-wrap:balance}
+#pass .sub{font-size:13px;color:#5b6070;margin-bottom:14px}
+#pass dl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 16px;margin:0}
+#pass dt{font-size:11px;color:#7a7f8c}
+#pass dd{margin:0;font-weight:700;font-size:15px}
+#pass .bars{height:34px;margin-top:16px;background:repeating-linear-gradient(90deg,#1d2330 0 2px,transparent 2px 4px,#1d2330 4px 7px,transparent 7px 8px,#1d2330 8px 9px,transparent 9px 12px)}
+#pass .stub{border-left:2px dashed #c9b996;padding:20px 16px;display:flex;flex-direction:column;gap:8px;justify-content:space-between;background:#efe0c3}
+#pass .stub b{font:22px Righteous,system-ui;color:#1d2330}
+#pass .stub small{color:#5b6070;font-size:12px}
+.btn{min-height:48px;border:0;border-radius:10px;background:#e0611d;color:#fff;font-weight:700;font-size:17px;padding:0 18px;box-shadow:0 6px 0 #a3430f}
+.btn:active{transform:translateY(3px);box-shadow:0 3px 0 #a3430f}
+.btn.ghost{background:transparent;color:#1d2330;box-shadow:none;border:1px solid #c9b996;font-size:14px;min-height:44px}
+#loadTxt{font-size:12px;color:#5b6070;min-height:16px}
+#credit{position:fixed;left:0;right:0;bottom:calc(10px + var(--sab));text-align:center;font-size:12px;color:var(--hud2);z-index:21;padding:0 12px}
+#credit a{color:var(--hud2)}
+@media (max-width:600px){#brand{padding:5px 10px}#brand b{font-size:15px;white-space:nowrap}#toast{top:calc(112px + var(--sat))}#stamp{top:calc(112px + var(--sat));width:160px}#pass{grid-template-columns:minmax(0,1fr)}#pass .stub{border-left:0;border-top:2px dashed #c9b996;flex-direction:row;align-items:center}#pass h1{font-size:32px}#pass dl{grid-template-columns:repeat(2,minmax(0,1fr))}#brand span{display:none}}
+#skip{right:calc(16px + var(--sar));bottom:calc(20px + var(--sab));display:none}
+body.launching #skip{display:block}
+/* side menu */
+#side{position:fixed;z-index:30;top:0;right:0;bottom:0;width:min(360px,92vw);padding:calc(16px + var(--sat)) 18px 18px;background:rgba(8,13,22,.94);border-left:1px solid var(--line);transform:translateX(105%);transition:transform .3s;overflow-y:auto}
+body.side #side{transform:none}
+#side h2{font:22px Righteous,system-ui;color:var(--org);margin:0 0 10px}
+#side h3{font-size:13px;color:var(--hud);margin:18px 0 6px;font-weight:700}
+#side p,#side li{font-size:14px;color:#cfe3e0}
+#side ul{padding-left:18px;margin:4px 0}
+#side kbd{font:12px "Chakra Petch";border:1px solid var(--line);border-radius:4px;padding:0 5px}
+#side .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+#side input[type=text],#side input[type=password]{flex:1;min-height:44px;font:16px "Chakra Petch";background:#0d1522;color:#fff;border:1px solid var(--line);border-radius:8px;padding:0 10px}
+#side .x{position:absolute;right:12px;top:calc(10px + var(--sat))}
+#passport{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+#passport canvas{width:100%;height:auto;background:var(--paper);border-radius:4px}
+#passport .empty{grid-column:1/-1;font-size:13px;color:var(--hud2)}
+/* 2D Chromium panel */
+#isoPanel{position:fixed;z-index:25;left:50%;top:50%;transform:translate(-50%,-50%);width:min(980px,96vw);display:none;padding:8px}
+#isoPanel.open{display:block}
+#isoPanel .bar2{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+#isoPanel .bar2 b{color:var(--hud);font-size:12px;white-space:nowrap}
+#isoUrl{flex:1;min-height:40px;font:16px "Chakra Petch";background:#0d1522;color:#fff;border:1px solid var(--line);border-radius:8px;padding:0 10px}
+#isoCanvas{display:block;width:100%;height:auto;border-radius:6px;touch-action:none;background:#000;max-height:calc(100vh - 140px);object-fit:contain}
+#isoTabs{display:flex;gap:6px;overflow-x:auto;margin-bottom:6px}#isoTabs .chip{flex:none;min-height:34px;font-size:12px}#isoTabs .chip b{color:var(--hud2);font-weight:400}
+#isoPanel .row2{display:flex;gap:6px;margin-top:6px}
+#isoType{flex:1;min-height:40px;font:16px "Chakra Petch";background:#0d1522;color:#fff;border:1px solid var(--line);border-radius:8px;padding:0 10px}
+#isoChip[data-s=ready]{border-color:var(--hud);color:var(--hud)}
+#isoChip[data-s=error]{border-color:var(--red);color:var(--red)}
+#keyBox{position:fixed;z-index:26;left:50%;top:50%;transform:translate(-50%,-50%);width:min(420px,92vw);padding:16px;display:none}
+#keyBox.open{display:block}
+#keyBox p{margin:0 0 10px;font-size:14px}
+#keyBox .row{display:flex;gap:8px}
+#keyBox input{flex:1;min-height:44px;font:16px "Chakra Petch";background:#0d1522;color:#fff;border:1px solid var(--line);border-radius:8px;padding:0 10px}
+#fatal{position:fixed;inset:0;z-index:40;display:none;place-items:center;padding:24px;text-align:center;background:var(--bg)}
+@media (prefers-reduced-motion:reduce){#pass,#stamp,#toast{transition:none}}
+</style>
+</head>
+<body>
+<div id="gl"></div>
+<div id="css3d"></div>
+
+<div id="top" class="hud">
+  <div id="brand" class="panel"><b>Space of the Tourism</b><span id="sysName">Spaceport Aurora</span></div>
+  <div id="chips">
+    <button class="chip fly" id="cStamps" title="Passport"><span id="stamps">Stamps <b>0</b>/0</span></button>
+    <button class="chip fly" id="cView" title="Cockpit or chase view (C)">View</button>
+    <button class="chip fly" id="cTV" title="Space TV (1)">TV</button>
+    <button class="chip fly" id="isoChip" data-s="off" title="Chromium ISO screen (2)">ISO</button>
+    <button class="chip fly" id="cJump" title="Hyperjump to a new system (J)">Jump</button>
+    <button class="chip" id="cMenu" title="Menu" aria-label="Menu"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="2" y="3" width="12" height="2" rx="1"/><rect x="2" y="7" width="12" height="2" rx="1"/><rect x="2" y="11" width="12" height="2" rx="1"/></svg></button>
+  </div>
+</div>
+
+<svg id="reticle" class="hud" viewBox="0 0 44 44" fill="none" stroke="#57f2d6" stroke-width="2"><circle cx="22" cy="22" r="9" opacity=".7"/><path d="M22 2v9M22 33v9M2 22h9M33 22h9"/></svg>
+<div id="target" class="hud"><div class="d"></div><div class="n"></div><div class="k"></div></div>
+<div id="dash" class="hud panel">
+  <div><div class="v" id="spd">0</div><div class="u">km/s</div></div>
+  <div><div class="u">Throttle</div><div class="bar" id="thrBar"><i></i></div><div class="u" style="margin-top:6px">Boost</div><div class="bar" id="boostBar"><i></i></div></div>
+  <div id="alt"></div>
+</div>
+<div id="toast" class="hud panel"></div>
+<div id="stamp" class="hud"><canvas width="380" height="260"></canvas><p></p></div>
+
+<div id="stick" class="hud"><i></i></div>
+<div id="right" class="hud">
+  <div id="thr"><i></i><span>THR</span></div>
+  <button id="boost">BOOST</button>
+</div>
+<button id="skip" class="hud chip">Skip launch</button>
+
+<div id="title">
+  <div id="pass">
+    <div class="main">
+      <h1>Space of the Tourism</h1>
+      <div class="sub">Boarding pass · one-way ticket to everywhere</div>
+      <dl>
+        <div><dt>Passenger</dt><dd>You</dd></div>
+        <div><dt>Class</dt><dd>Tourist</dd></div>
+        <div><dt>Vessel</dt><dd>Feisar (HexGL)</dd></div>
+        <div><dt>From</dt><dd>Spaceport Aurora</dd></div>
+        <div><dt>Gate</dt><dd>Launch bay 3</dd></div>
+        <div><dt>To</dt><dd>Anywhere</dd></div>
+      </dl>
+      <div class="bars" aria-hidden="true"></div>
+    </div>
+    <div class="stub">
+      <div><b>Seat 1A</b><br><small>In-flight: Space TV, Chromium.iso</small></div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn" id="board" disabled>Board</button>
+        <div id="loadTxt">Loading the spaceport…</div>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="credit">Ship model and textures: <a href="https://github.com/BKcore/HexGL" target="_blank" rel="noopener">HexGL</a> by Thibaut Despoulain (MIT) · Chromium runs in a Vercel Sandbox VM</div>
+
+<aside id="side" aria-label="Menu">
+  <button class="chip x" id="sideX" aria-label="Close menu">Close</button>
+  <h2>Flight manual</h2>
+  <h3>Controls</h3>
+  <ul id="ctlTouch">
+    <li>Left stick steers; the ship banks into turns.</li>
+    <li>Right slider is the throttle; hold Boost for a burst.</li>
+    <li>Drag anywhere else to look around the cabin.</li>
+    <li>Tap the cockpit buttons: <b>Space TV</b>, <b>Chromium.iso</b>, <b>Boost</b>, <b>Hyperjump</b>.</li>
+  </ul>
+  <ul id="ctlKeys">
+    <li><kbd>W</kbd><kbd>S</kbd> or arrows: pitch · <kbd>A</kbd><kbd>D</kbd>: turn · <kbd>Q</kbd><kbd>E</kbd>: roll</li>
+    <li><kbd>R</kbd>/<kbd>F</kbd> or wheel: throttle · <kbd>Shift</kbd>/<kbd>Space</kbd>: boost</li>
+    <li><kbd>1</kbd> Space TV · <kbd>2</kbd> Chromium.iso · <kbd>C</kbd> view · <kbd>J</kbd> hyperjump · <kbd>M</kbd> sound</li>
+    <li>Drag with the mouse to steer; right-drag looks around the cabin.</li>
+  </ul>
+  <h3>Passport</h3>
+  <div id="passport"><div class="empty">No stamps yet. Fly close to a planet to get one.</div></div>
+  <h3>Settings</h3>
+  <div class="row"><button class="chip" id="sSound">Sound: on</button><button class="chip" id="sQuality">Quality: auto</button></div>
+  <h3>Chromium.iso access key</h3>
+  <p>The ISO screen boots a Chromium VM on the owner's Vercel plan, so it asks for a key.</p>
+  <div class="row"><input type="password" id="keyInput" placeholder="Access key" autocomplete="off"><button class="chip" id="keySave">Save</button></div>
+  <h3>Credits</h3>
+  <p>Feisar ship, textures and booster flame from <a href="https://github.com/BKcore/HexGL" target="_blank" rel="noopener" style="color:var(--hud)">HexGL</a> by Thibaut Despoulain, MIT licence. Space TV plays official YouTube uploads by Erik Wernquist and Kurzgesagt. The Chromium screen reuses BrowserHub from <a href="https://github.com/vendemiaraul-cyber/3d-browser" target="_blank" rel="noopener" style="color:var(--hud)">3d-browser</a>.</p>
+</aside>
+
+<div id="isoPanel" class="panel" role="dialog" aria-label="Chromium">
+  <div class="bar2"><b>CHROMIUM.ISO</b>
+    <button class="chip" id="pBack" aria-label="Back">◀</button><button class="chip" id="pFwd" aria-label="Forward">▶</button><button class="chip" id="pReload" aria-label="Reload">↻</button>
+    <input id="isoUrl" type="text" autocomplete="off" spellcheck="false" placeholder="URL or search">
+    <button class="chip" id="pClose">Close</button></div>
+  <div id="isoTabs"></div>
+  <canvas id="isoCanvas" width="960" height="600"></canvas>
+  <div class="row2"><input id="isoType" type="text" autocomplete="off" placeholder="Type into the page"><button class="chip" id="pEnter">Enter</button><button class="chip" id="pBksp">⌫</button><button class="chip" id="pHome">Space article</button></div>
+</div>
+<div id="keyBox" class="panel" role="dialog" aria-label="Access key">
+  <p>Chromium.iso boots a VM on the owner's Vercel plan. Enter the access key to start it.</p>
+  <div class="row"><input id="keyBoxInput" type="password" autocomplete="off" placeholder="Access key"><button class="chip" id="keyBoxGo">Boot</button><button class="chip" id="keyBoxX">Cancel</button></div>
+</div>
+<div id="fatal"><div><h2 style="font:28px Righteous;color:#ff9a3c">The spaceport could not open</h2><p id="fatalMsg"></p></div></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

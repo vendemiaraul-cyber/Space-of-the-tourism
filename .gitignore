@@ -1,0 +1,7 @@
+node_modules/
+public/assets/hexgl/
+dist/
+.vercel/
+.netlify/
+.env*
+.access_key
