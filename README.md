@@ -5,6 +5,10 @@ fly through procedural star systems collecting passport stamps. The cockpit has 
 (a YouTube episode on a pop-up screen), Boost, Hyperjump and Chromium.iso (a live Chromium in a Vercel
 Sandbox VM, opened on Wikipedia's "Space" article).
 
+Dive into any planet except a gas giant to land on it: each world type gets its own generated terrain
+(garden valleys and snowy peaks, ocean islands, desert mesas and canyons, ice fields, lava lakes, toxic
+swamps, cratered moons) with liquids, props and its own sky. Climb above 1,000 m or press Orbit to leave.
+
 ## Layout
 
 ```
@@ -13,6 +17,7 @@ public/js/main.js      bootstrap: Chromium client first, then the 3D game (dynam
 public/js/game.js      renderer, launch cinematic, flight model, HUD, screens, stamps, hyperjump
 public/js/station.js   Spaceport Aurora: launch tube, bay door, ring, solar wings
 public/js/planets.js   star systems; planet surfaces baked on the GPU (colour, height/roughness/lights, clouds)
+public/js/surface.js   landings: terrain displaced on the GPU from noise with an exact CPU twin for collisions
 public/js/cockpit.js   cabin, dashboard buttons, pop-up screens, bobblehead
 public/js/hexgl.js     loader for HexGL's old three.js JSON models
 public/js/iso.js       Chromium client: /api/vm boot, WebSocket frames, multi-touch input, 2D panel

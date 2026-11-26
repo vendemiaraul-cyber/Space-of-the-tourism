@@ -24,10 +24,18 @@
 *{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:#e8f4f2;font:15px/1.4 "Chakra Petch",system-ui,sans-serif;touch-action:none;user-select:none;-webkit-user-select:none}
 button{font:inherit;color:inherit;cursor:pointer}
-#gl,#css3d{position:fixed;inset:0}
+#gl{position:fixed;inset:0}
 #gl canvas{display:block;width:100%;height:100%}
-#css3d{pointer-events:none;z-index:2}
-#css3d iframe{pointer-events:auto;border:0;background:#000}
+/* Space TV: a flat box placed over the 3D screen every frame (z above the HUD so taps reach the player) */
+#tvBox{position:fixed;left:0;top:0;z-index:6;display:none;background:#05070d;border-radius:4px;overflow:hidden;box-shadow:0 0 0 1px rgba(255,90,58,.55),0 6px 24px #0008;will-change:transform}
+#tvBox::before{content:"SPACE TV · tuning in…";position:absolute;inset:0;display:grid;place-items:center;color:#ff9a3c;font:600 14px Chakra Petch,system-ui}
+#tvBox iframe{position:relative;display:block;width:100%;height:100%;border:0}
+/* atmospheric entry / exit veil */
+#fx{position:fixed;inset:0;z-index:4;pointer-events:none;opacity:0;transition:opacity .6s ease}
+#fx.entry{background:radial-gradient(ellipse at 50% 60%,rgba(255,244,214,.96),rgba(255,128,48,.92) 45%,rgba(110,22,10,.97))}
+#fx.exit{background:radial-gradient(ellipse at 50% 40%,rgba(238,246,255,.98),rgba(126,176,255,.93) 55%,rgba(8,16,44,.98))}
+#fx.on{opacity:1}
+body:not(.surface) #cOrbit{display:none}
 .hud{position:fixed;z-index:5;pointer-events:none}
 .hud *{pointer-events:auto}
 .panel{background:var(--glass);border:1px solid var(--line);border-radius:10px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
@@ -136,7 +144,7 @@ body.side #side{transform:none}
 </head>
 <body>
 <div id="gl"></div>
-<div id="css3d"></div>
+<div id="fx"></div>
 
 <div id="top" class="hud">
   <div id="brand" class="panel"><b>Space of the Tourism</b><span id="sysName">Spaceport Aurora</span></div>
@@ -146,6 +154,7 @@ body.side #side{transform:none}
     <button class="chip fly" id="cTV" title="Space TV (1)">TV</button>
     <button class="chip fly" id="isoChip" data-s="off" title="Chromium ISO screen (2)">ISO</button>
     <button class="chip fly" id="cJump" title="Hyperjump to a new system (J)">Jump</button>
+    <button class="chip fly" id="cOrbit" title="Return to orbit (O)">Orbit</button>
     <button class="chip" id="cMenu" title="Menu" aria-label="Menu"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="2" y="3" width="12" height="2" rx="1"/><rect x="2" y="7" width="12" height="2" rx="1"/><rect x="2" y="11" width="12" height="2" rx="1"/></svg></button>
   </div>
 </div>
@@ -202,12 +211,14 @@ body.side #side{transform:none}
     <li>Right slider is the throttle; hold Boost for a burst.</li>
     <li>Drag anywhere else to look around the cabin.</li>
     <li>Tap the cockpit buttons: <b>Space TV</b>, <b>Chromium.iso</b>, <b>Boost</b>, <b>Hyperjump</b>.</li>
+    <li>Dive into any planet except a gas giant to land on its surface. Climb above 1,000 m or tap <b>Orbit</b> to leave.</li>
   </ul>
   <ul id="ctlKeys">
     <li><kbd>W</kbd><kbd>S</kbd> or arrows: pitch · <kbd>A</kbd><kbd>D</kbd>: turn · <kbd>Q</kbd><kbd>E</kbd>: roll</li>
     <li><kbd>R</kbd>/<kbd>F</kbd> or wheel: throttle · <kbd>Shift</kbd>/<kbd>Space</kbd>: boost</li>
     <li><kbd>1</kbd> Space TV · <kbd>2</kbd> Chromium.iso · <kbd>C</kbd> view · <kbd>J</kbd> hyperjump · <kbd>M</kbd> sound</li>
     <li>Drag with the mouse to steer; right-drag looks around the cabin.</li>
+    <li>Dive into any planet except a gas giant to land on it. Climb above 1,000 m or press <kbd>O</kbd> to return to orbit.</li>
   </ul>
   <h3>Passport</h3>
   <div id="passport"><div class="empty">No stamps yet. Fly close to a planet to get one.</div></div>

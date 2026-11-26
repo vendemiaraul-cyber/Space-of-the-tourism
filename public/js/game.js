@@ -1,7 +1,6 @@
 // Space of the Tourism: the 3D game. Launch from Spaceport Aurora, fly the HexGL Feisar,
 // collect passport stamps from procedural planets, watch Space TV, browse with Chromium.iso.
 import * as THREE from 'three';
-import { CSS3DRenderer, CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -10,6 +9,7 @@ import { loadFeisar, fallbackShip } from './hexgl.js';
 import { buildStation, TUBE, SHIP_START } from './station.js';
 import { buildCockpit } from './cockpit.js';
 import { genSystem, StarSystem } from './planets.js';
+import { Surface, EXIT_ALT } from './surface.js';
 import { clamp, lerp, damp, smooth, easeInOut, isTouch, qs, store, canvas, rrect, FONT, DISPLAY } from './util.js';
 
 const $ = (id) => document.getElementById(id);
@@ -37,8 +37,6 @@ export async function start({ iso, sound }) {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.02, 2e6);
   scene.add(camera);
-  const css = new CSS3DRenderer(); css.setSize(innerWidth, innerHeight); $('css3d').appendChild(css.domElement);
-  const cssScene = new THREE.Scene();
   let composer = null, bloom = null;
   const useBloom = !low;
   if (useBloom) {
@@ -146,23 +144,55 @@ export async function start({ iso, sound }) {
     $('stamps').append('Stamps ', b, `/${list.length}`);
   }
 
-  // ---------------------------------------------------------------- Space TV (YouTube in a CSS3D screen)
-  const tvDiv = document.createElement('div'); tvDiv.style.width = '1280px'; tvDiv.style.height = '720px'; tvDiv.style.background = '#000';
-  const tvObj = new CSS3DObject(tvDiv); cssScene.add(tvObj); tvDiv.style.display = 'none';
+  // ---------------------------------------------------------------- Space TV (YouTube on a 2D layer that tracks the 3D screen)
+  // A plain fixed-position box instead of a CSS 3D transform: mobile browsers misplace 3D-transformed iframes
+  // and drop taps on them, while a flat box stays on screen and is always touchable.
+  const tvBox = document.createElement('div'); tvBox.id = 'tvBox'; document.body.appendChild(tvBox);
+  const tvRect = { x: 0, y: 0, w: 0, h: 0, on: false };
+  const tvC = [0, 1, 2, 3].map(() => new THREE.Vector3());
   let tvEpisode = store.get('episode', 0) % EPISODES.length, tvFrame = null;
   function tvLoad() {
     const ep = EPISODES[tvEpisode];
     if (!tvFrame) {
       tvFrame = document.createElement('iframe');
-      tvFrame.width = '1280'; tvFrame.height = '720';
       tvFrame.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
       tvFrame.referrerPolicy = 'strict-origin-when-cross-origin';
       tvFrame.title = 'Space TV';
-      tvFrame.style.cssText = 'width:1280px;height:720px;border:0;display:block';
-      tvDiv.appendChild(tvFrame);
+      tvBox.appendChild(tvFrame);
     }
-    tvFrame.src = `https://www.youtube-nocookie.com/embed/${ep.id}?autoplay=1&playsinline=1&rel=0&modestbranding=1`;
-    toast(`Space TV · ${ep.title}`, `${ep.by}${ep.len ? ' · ' + ep.len : ''} · YouTube`, 3600);
+    // phones only allow autoplay without sound; the player shows its own unmute button
+    tvFrame.src = `https://www.youtube-nocookie.com/embed/${ep.id}?autoplay=1&playsinline=1&rel=0&modestbranding=1${isTouch ? '&mute=1' : ''}`;
+    toast(`Space TV · ${ep.title}`, `${ep.by}${ep.len ? ' · ' + ep.len : ''} · YouTube${isTouch ? ' · tap the video to unmute' : ''}`, 3600);
+  }
+  function placeTV(show) {
+    if (show) {
+      camera.updateMatrixWorld();          // this frame's camera, not last frame's (the ship moves metres per frame)
+      const d = cockpit.tv.display; d.updateWorldMatrix(true, false);
+      const hw = cockpit.tv.w / 2, hh = cockpit.tv.h / 2;
+      tvC[0].set(-hw, hh, 0); tvC[1].set(hw, hh, 0); tvC[2].set(-hw, -hh, 0); tvC[3].set(hw, -hh, 0);
+      let x0 = Infinity, x1 = -Infinity, yt = 0, yb = 0;
+      for (let i = 0; i < 4 && show; i++) {
+        const v = tvC[i].applyMatrix4(d.matrixWorld).project(camera);
+        if (v.z > 1 || v.z < -1) { show = false; break; }
+        const sx = (v.x * 0.5 + 0.5) * innerWidth, sy = (0.5 - v.y * 0.5) * innerHeight;
+        x0 = Math.min(x0, sx); x1 = Math.max(x1, sx);
+        if (i < 2) yt += sy / 2; else yb += sy / 2;
+      }
+      if (show) {
+        let w = x1 - x0, h = yb - yt, x = x0, y = yt;
+        if (w / h > 16 / 9) { const nw = h * 16 / 9; x += (w - nw) / 2; w = nw; } else { const nh = w * 9 / 16; y += (h - nh) / 2; h = nh; }
+        const m = 8, k = Math.min(1, (innerWidth - 2 * m) / w, (innerHeight - 2 * m) / h);   // never larger than the viewport
+        if (k < 1) { x += w * (1 - k) / 2; y += h * (1 - k) / 2; w *= k; h *= k; }
+        x = clamp(x, m, innerWidth - m - w); y = clamp(y, m, innerHeight - m - h);           // never off the edge
+        if (!(w > 60)) show = false;
+        else if (!tvRect.on || Math.abs(x - tvRect.x) > 0.5 || Math.abs(y - tvRect.y) > 0.5 || Math.abs(w - tvRect.w) > 0.5 || Math.abs(h - tvRect.h) > 0.5) {
+          Object.assign(tvRect, { x, y, w, h });
+          tvBox.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px)`;
+          tvBox.style.width = `${w.toFixed(1)}px`; tvBox.style.height = `${h.toFixed(1)}px`;
+        }
+      }
+    }
+    if (show !== tvRect.on) { tvRect.on = show; tvBox.style.display = show ? 'block' : 'none'; }
   }
   function setTV(on) {
     if (on === !!cockpit.tv.target) return;
@@ -277,6 +307,7 @@ export async function start({ iso, sound }) {
     else if (k === 'c') setView(S.view === 'cockpit' ? 'chase' : 'cockpit');
     else if (k === 'j') startJump();
     else if (k === 'm') toggleSound();
+    else if (k === 'o') leaveSurface();
     else if (k === 'escape') { setTV(false); setIso(false); }
     if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
   });
@@ -286,6 +317,7 @@ export async function start({ iso, sound }) {
   for (const b of cockpit.buttons) if (b.id === 'tv' || b.id === 'iso' || b.id === 'jump') b.hud = true;
   $('cTV').onclick = cpress('tv');
   $('cJump').onclick = cpress('jump');
+  $('cOrbit').onclick = () => leaveSurface();
   $('cView').onclick = () => setView(S.view === 'cockpit' ? 'chase' : 'cockpit');
   $('cStamps').onclick = () => { renderPassport(); document.body.classList.add('side'); };
   const toggleIso = () => { if (S.mode === 'flight' || S.mode === 'jump') pressButton({ id: 'iso', t: 0 }); else { iso.showPanel(true); iso.open(); } };
@@ -316,7 +348,7 @@ export async function start({ iso, sound }) {
   // ---------------------------------------------------------------- resize
   function resize() {
     const w = innerWidth, h = innerHeight, a = w / h;
-    renderer.setSize(w, h); css.setSize(w, h); if (composer) composer.setSize(w, h);
+    renderer.setSize(w, h); if (composer) composer.setSize(w, h);
     camera.aspect = a;
     const needV = 2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(33)) / a) * 180 / Math.PI;
     S.baseFov = clamp(Math.max(70, needV), 70, 112);
@@ -423,6 +455,7 @@ export async function start({ iso, sound }) {
   // ---------------------------------------------------------------- hyperjump
   let jumpBusy = false;
   function startJump() {
+    if (surface) { leaveSurface(); return; }
     if (S.mode !== 'flight' || jumpBusy) return;
     jumpBusy = true; S.jumpPhase = 'charge'; S.jump = 0; sound.jumpCharge();
     toast('Hyperdrive spooling…', `Next stop: a brand-new star system`, 2400);
@@ -451,9 +484,73 @@ export async function start({ iso, sound }) {
     setTimeout(() => { S.jumpPhase = null; warp.visible = false; jumpBusy = false; }, 1400);
   }
 
+  // ---------------------------------------------------------------- planet surfaces
+  // Dive into a planet (gas giants excepted) and the Feisar drops through the atmosphere onto generated terrain.
+  const ENTRY_ALT = 40;
+  let surface = null, surfaceFrom = null, fxBusy = false, lastGroundToast = -9;
+  const fx = $('fx');
+  function veil(kind, swap) {
+    fxBusy = true; fx.className = kind + ' on';
+    setTimeout(() => { swap(); fx.className = kind; setTimeout(() => { fxBusy = false; }, 650); }, 650);
+  }
+  function enterSurface(p, normal) {
+    if (surface || fxBusy) return;
+    surfaceFrom = { planet: p, normal: normal.clone() };
+    S.speed = Math.min(S.speed, 160); S.shake = 0.9; sound.whoosh(); sound.hiss(1.3, 300, 2600, 0.3, 0.7);
+    toast(`Entering the atmosphere of ${p.name}`, p.spec.label, 1600);
+    veil('entry', () => {
+      surface = new Surface({ spec: p.spec, name: p.name, sunColor: system.sys.sunColor, low });
+      scene.add(surface.group);
+      system.group.visible = false; station.group.visible = false;
+      scene.background = null; scene.fog = surface.fog;
+      hemi.color.copy(surface.hemiSky); hemi.groundColor.copy(surface.hemiGround); hemi.intensity = surface.hemiIntensity;
+      system.sun.position.copy(surface.sunDir).multiplyScalar(1000);
+      shipRoot.position.set(0, surface.groundAt(0, 0) + 260, 0);
+      shipRoot.quaternion.setFromEuler(tmpE.set(-0.12, 0, 0, 'YXZ'));
+      S.speed = 150; S.vel.set(0, 0, -150).applyQuaternion(shipRoot.quaternion); S.angVel.set(0, 0, 0);
+      chasePos.copy(shipRoot.position);
+      surface.update(0, shipRoot.position, shipRoot.position);
+      document.body.classList.add('surface');
+      toast(`Welcome to ${p.name}`, `${p.spec.label} surface · climb above ${EXIT_ALT.toLocaleString()} m or tap Orbit to leave`, 5000);
+    });
+  }
+  function leaveSurface() {
+    if (!surface || fxBusy) return;
+    sound.whoosh();
+    veil('exit', () => {
+      const { planet: p, normal: n } = surfaceFrom;
+      scene.remove(surface.group); surface.dispose(); surface = null;
+      system.group.visible = true; station.group.visible = true;
+      scene.background = system.skyRT.texture; scene.fog = null;
+      hemi.color.set(0x8fb4ff); hemi.groundColor.set(0x1a1020); hemi.intensity = 0.55;
+      system.sun.position.copy(system.sys.sunDir).multiplyScalar(1000);
+      shipRoot.position.copy(p.group.position).addScaledVector(n, p.radius * 1.3 + 300);
+      shipRoot.quaternion.setFromRotationMatrix(new THREE.Matrix4().lookAt(shipRoot.position, tmpV.copy(shipRoot.position).add(n), tmpV2.set(0, 1, 0)));
+      S.speed = 380; S.vel.set(0, 0, -380).applyQuaternion(shipRoot.quaternion);
+      chasePos.copy(shipRoot.position);
+      document.body.classList.remove('surface');
+      toast(`Back in orbit around ${p.name}`, 'The marker points at the next world to visit.', 3500);
+    });
+  }
+  function collideSurface() {
+    const p = shipRoot.position, g = surface.groundAt(p.x, p.z);
+    if (p.y < g + 3) {
+      p.y = g + 3;
+      if (S.vel.y < 0) S.vel.y *= -0.35;
+      S.speed *= 0.75; S.shake = Math.max(S.shake, 0.45);
+      if (S.t - lastGroundToast > 2.5) {
+        lastGroundToast = S.t; sound.thud();
+        const hot = surface.liquid === 'lava' && surface.onLiquid(p.x, p.z);
+        toast(hot ? 'Hot! Lava is not a runway' : 'Pull up!', hot ? 'Your paint job would like a word.' : 'Terrain contact. Nose up to climb.', 1800);
+      }
+    }
+    if (p.y > EXIT_ALT && !fxBusy) leaveSurface();
+  }
+
   // ---------------------------------------------------------------- flight
   const fwd = new THREE.Vector3(), up = new THREE.Vector3(), right = new THREE.Vector3();
   function nearestSurface() {
+    if (surface) { const p = shipRoot.position; return { planet: surfaceFrom.planet, dist: p.y - surface.groundAt(p.x, p.z) }; }
     let best = null, bd = Infinity;
     for (const p of system.planets) { const d = p.group.position.distanceTo(shipRoot.position) - p.radius; if (d < bd) { bd = d; best = p; } }
     if (station.group.parent) { const d = Math.max(0, shipRoot.position.length() - 400); if (d < bd) { bd = d; best = null; } }
@@ -494,7 +591,7 @@ export async function start({ iso, sound }) {
     shipRoot.quaternion.normalize();
     // speed: auto-cruise scales with the distance to the nearest surface
     const ns = nearestSurface();
-    const cruise = clamp(ns.dist * 0.32, CRUISE_MIN, CRUISE_MAX);
+    const cruise = surface ? clamp(70 + ns.dist * 0.55, 70, 420) : clamp(ns.dist * 0.32, CRUISE_MIN, CRUISE_MAX);
     const target = S.throttle * cruise * (S.boost ? 2.4 : 1) + (S.throttle > 0.02 ? 12 : 0);
     S.speed = damp(S.speed, target, target > S.speed ? (S.boost ? 3 : 1.1) : 1.6, dt);
     fwd.set(0, 0, -1).applyQuaternion(shipRoot.quaternion);
@@ -502,7 +599,7 @@ export async function start({ iso, sound }) {
     S.vel.lerp(tmpV.copy(fwd).multiplyScalar(S.speed), 1 - Math.exp(-dt * 3.5));
     shipRoot.position.addScaledVector(S.vel, dt);
     collide();
-    discover();
+    if (!surface) discover();
     // acceleration in ship space (drives the bobblehead)
     tmpV.copy(S.vel).sub(prevVel).divideScalar(Math.max(dt, 1e-3)).applyQuaternion(tmpQ.copy(shipRoot.quaternion).invert());
     S.lastAccel.lerp(tmpV.clampLength(0, 400), 0.3);
@@ -510,15 +607,22 @@ export async function start({ iso, sound }) {
     return ns;
   }
   function collide() {
+    if (surface) { collideSurface(); return; }
     for (const p of system.planets) {
-      const c = p.group.position, min = p.radius + 6;
+      const c = p.group.position, min = p.radius + 6, gas = p.spec.type === 'gas';
       const d = shipRoot.position.distanceTo(c);
+      if (!gas && d < p.radius + ENTRY_ALT) {          // rocky world: atmospheric entry
+        const n = tmpV.copy(shipRoot.position).sub(c).normalize();
+        if (!fxBusy) enterSurface(p, n);
+        if (d < min) shipRoot.position.copy(c).addScaledVector(n, min);
+        continue;
+      }
       if (d < min) {
         const n = tmpV.copy(shipRoot.position).sub(c).normalize();
         shipRoot.position.copy(c).addScaledVector(n, min);
         const vn = S.vel.dot(n); if (vn < 0) S.vel.addScaledVector(n, -1.6 * vn);
         S.speed *= 0.4; S.shake = 0.6; sound.thud();
-        toast('Bounced off the atmosphere', `${p.name} would like you to keep a respectful altitude.`, 2200);
+        toast(`${p.name} has no ground to land on`, 'Gas giants are all cloud. Try a rocky world.', 2400);
       }
     }
     if (station.group.parent) {           // spine capsule + ring torus
@@ -554,6 +658,13 @@ export async function start({ iso, sound }) {
     $('thrBar').firstElementChild.style.width = `${S.throttle * 100}%`;
     $('boostBar').firstElementChild.style.width = `${S.boostE * 100}%`;
     thrFill.style.height = `${S.throttle * 100}%`;
+    if (surface) {
+      $('alt').textContent = `Altitude ${Math.max(0, Math.round(ns.dist)).toLocaleString()} m\n${surface.name} surface`;
+      tgt.style.display = 'none';
+      instT -= dt;
+      if (instT <= 0 && S.view === 'cockpit') { instT = 0.1; drawInstruments(null, 0); }
+      return;
+    }
     $('alt').textContent = ns.planet && ns.dist < ns.planet.radius * 2 ? `Altitude ${fmtDist(ns.dist)}\nover ${ns.planet.name}` : '';
     // target: nearest unvisited world
     let best = null, bd = Infinity;
@@ -581,6 +692,23 @@ export async function start({ iso, sound }) {
     g.fillText(Math.round(S.speed).toLocaleString(), 20, 92); g.font = `600 22px ${FONT}`; g.fillStyle = '#9fb8c9'; g.fillText('KM/S', 22, 120);
     const bar = (y, v, c, label) => { g.fillStyle = 'rgba(255,255,255,.12)'; rrect(g, 20, y, 200, 14, 7); g.fill(); g.fillStyle = c; rrect(g, 20, y, Math.max(14, 200 * v), 14, 7); g.fill(); g.fillStyle = '#9fb8c9'; g.font = `600 18px ${FONT}`; g.fillText(label, 20, y - 6); };
     bar(160, S.throttle, '#57f2d6', 'THROTTLE'); bar(212, S.boostE, '#ff9a3c', 'BOOST');
+    if (surface) {                // attitude ball and altitude instead of the radar
+      const cx = 380, cy = 118, R = 92;
+      fwd.set(0, 0, -1).applyQuaternion(shipRoot.quaternion); right.set(1, 0, 0).applyQuaternion(shipRoot.quaternion);
+      const pitch = Math.asin(clamp(fwd.y, -1, 1)), roll = Math.asin(clamp(right.y, -1, 1)), off = clamp(pitch / 1.2, -1, 1) * R;
+      g.save(); g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.clip(); g.translate(cx, cy); g.rotate(roll);
+      g.fillStyle = '#12324a'; g.fillRect(-R * 2, -R * 2 + off, R * 4, R * 2);
+      g.fillStyle = '#4a3318'; g.fillRect(-R * 2, off, R * 4, R * 2);
+      g.strokeStyle = '#57f2d6'; g.lineWidth = 2; g.beginPath(); g.moveTo(-R * 2, off); g.lineTo(R * 2, off); g.stroke();
+      g.restore();
+      g.strokeStyle = 'rgba(87,242,214,.6)'; g.lineWidth = 2; g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.stroke();
+      g.strokeStyle = '#ff9a3c'; g.lineWidth = 3; g.beginPath(); g.moveTo(cx - 34, cy); g.lineTo(cx - 10, cy); g.lineTo(cx, cy + 8); g.lineTo(cx + 10, cy); g.lineTo(cx + 34, cy); g.stroke();
+      const sp = shipRoot.position, alt = Math.max(0, Math.round(sp.y - surface.groundAt(sp.x, sp.z)));
+      g.fillStyle = '#ff9a3c'; g.font = `700 20px ${FONT}`; g.textAlign = 'center';
+      g.fillText(`ALT ${alt.toLocaleString()} M`, cx, H - 12);
+      cockpit.instTex.needsUpdate = true;
+      return;
+    }
     // radar (top-down, ship heading up)
     const cx = 380, cy = 128, R = 104;
     g.strokeStyle = 'rgba(87,242,214,.4)'; g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.stroke(); g.beginPath(); g.arc(cx, cy, R / 2, 0, Math.PI * 2); g.stroke();
@@ -648,10 +776,11 @@ export async function start({ iso, sound }) {
     camera.updateProjectionMatrix();
     // world updates
     system.update(dt, camera.position);
+    if (surface) surface.update(rdt, shipRoot.position, camera.position);
     if (station.group.parent) {
       station.update(dt, S.t);
       const far = shipRoot.position.length() > 30000;
-      station.group.visible = !far;
+      station.group.visible = !far && !surface;
       station.setInterior(shipRoot.position.z > TUBE.front - 400 || S.mode === 'title');
     }
     ship.update(rdt, S.mode === 'launch' ? (S.launchT > T_FIRE ? 2 : 0.3) : S.boost ? 2 : S.throttle);
@@ -674,18 +803,10 @@ export async function start({ iso, sound }) {
     cockpit.update(rdt, { accel: S.lastAccel, yawRate, boostLevel: S.boostE, time: S.t, jumpCharge: S.jumpPhase ? 1 : S.jump });
     if (cockpit.iso.root.visible && !iso.hasFrame && frameN % 6 === 0) { iso.drawBoot(); isoTex.needsUpdate = true; }
     if (S.mode === 'flight' || S.mode === 'jump') hud(ns, rdt);
-    // Space TV follows its 3D screen
-    const tvShown = S.view === 'cockpit' && cockpit.tv.shown && (S.mode === 'flight');
-    tvDiv.style.display = tvShown ? '' : 'none';
-    if (tvShown) {
-      const d = cockpit.tv.display; d.updateWorldMatrix(true, false);
-      d.matrixWorld.decompose(tvObj.position, tvObj.quaternion, tmpV);
-      tvObj.position.addScaledVector(tmpV2.set(0, 0, 1).applyQuaternion(tvObj.quaternion), 0.001);
-      tvObj.scale.setScalar(cockpit.tv.w / 1280);
-    }
+    // Space TV box follows its 3D screen
+    placeTV(S.view === 'cockpit' && cockpit.tv.shown && S.mode === 'flight' && !fxBusy);
     // render
     if (composer) composer.render(); else renderer.render(scene, camera);
-    if (tvShown) css.render(cssScene, camera);
     if (TEST) window.__sottFrame = frameN;
     requestAnimationFrame(frame);
     void lastIsoBoot;
@@ -696,6 +817,9 @@ export async function start({ iso, sound }) {
   const api = {
     toggleIso, setView, startJump, state: S, camera, scene, renderer, cockpit, station, get system() { return system; }, shipRoot, iso,
     press: (id) => pressButton({ id, t: 0 }),
+    get surface() { return surface; },
+    land: (i) => { const p = system.planets[i]; if (p) enterSurface(p, new THREE.Vector3(0, 1, 0)); },
+    leave: () => leaveSurface(),
   };
   if (TEST) window.__sott = api;
   return api;
